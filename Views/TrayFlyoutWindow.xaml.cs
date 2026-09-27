@@ -78,6 +78,14 @@ public sealed partial class TrayFlyoutWindow : WindowEx
     {
         InitializeComponent();
         _hwnd = (HWND)WindowNative.GetWindowHandle(this);
+        _page.WindowHandle = _hwnd;
+        _page.RequestShow = () =>
+        {
+            if (!_isPopupVisible)
+            {
+                ShowPopup();
+            }
+        };
         PageHost.Content = _page;
 
         SystemBackdrop = _backdrop;
@@ -105,6 +113,8 @@ public sealed partial class TrayFlyoutWindow : WindowEx
         _animationTimer.IsRepeating = true;
         _animationTimer.Tick += AnimationTimer_Tick;
     }
+
+    public FlyoutPage Page => _page;
 
     /// <summary>Shows the popup, or hides it if already visible (tray-icon click behavior).</summary>
     public void Toggle()
@@ -343,7 +353,10 @@ public sealed partial class TrayFlyoutWindow : WindowEx
             return false;
         }
 
-        if (foreground == _hwnd || PInvoke.GetAncestor(foreground, GET_ANCESTOR_FLAGS.GA_ROOT) == _hwnd)
+        // GA_ROOTOWNER covers the file pickers, which are separate windows owned by the flyout.
+        if (foreground == _hwnd
+            || PInvoke.GetAncestor(foreground, GET_ANCESTOR_FLAGS.GA_ROOT) == _hwnd
+            || PInvoke.GetAncestor(foreground, GET_ANCESTOR_FLAGS.GA_ROOTOWNER) == _hwnd)
         {
             return true;
         }

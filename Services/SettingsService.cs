@@ -24,6 +24,19 @@ internal static class SettingsService
         set => Set(nameof(HasLaunchedBefore), value);
     }
 
+    /// <summary>The text in the Create tab, kept so it survives the flyout closing while idle.</summary>
+    public static string LastText
+    {
+        get => Get(nameof(LastText), string.Empty);
+        set => Set(nameof(LastText), value.Length > 2000 ? value[..2000] : value);
+    }
+
+    public static QrErrorCorrection ErrorCorrection
+    {
+        get => (QrErrorCorrection)Get(nameof(ErrorCorrection), (int)QrErrorCorrection.Medium);
+        set => Set(nameof(ErrorCorrection), (int)value);
+    }
+
     public static T? GetJson<T>(string key, JsonTypeInfo<T> typeInfo)
     {
         if (Get<string?>(key, null) is not { } json)

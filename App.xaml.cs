@@ -3,6 +3,8 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using TrayQr.Services;
 using TrayQr.Views;
+using Windows.ApplicationModel.DataTransfer;
+using Launcher = Windows.System.Launcher;
 using WinUIEx;
 
 namespace TrayQr;
@@ -13,7 +15,7 @@ namespace TrayQr;
 /// </summary>
 public partial class App : Application
 {
-    public const string DisplayName = "Tray Qr";
+    public const string DisplayName = "Tray QR";
 
     private const string MutexName = "Local\\TrayQr_SingleInstance";
     private const string ShowEventName = "Local\\TrayQr_ShowFlyout";
@@ -22,6 +24,9 @@ public partial class App : Application
     // Startup leaves JIT and first-request state behind that the idle app never touches again.
     private static readonly TimeSpan StartupTrimDelay = TimeSpan.FromSeconds(30);
 
+    // Give up on a screen snip that never lands on the clipboard (the user pressed Esc).
+    private static readonly TimeSpan ScreenScanTimeout = TimeSpan.FromMinutes(1);
+
     private Mutex? _singleInstanceMutex;
     private EventWaitHandle? _showEvent;
     private RegisteredWaitHandle? _showWait;
@@ -29,6 +34,7 @@ public partial class App : Application
     private TrayFlyoutWindow? _flyout;
     private SettingsWindow? _settings;
     private DispatcherQueue? _dispatcher;
+    private DispatcherQueueTimer? _scanTimeout;
     private bool _isExiting;
 
     public App()
@@ -105,6 +111,56 @@ public partial class App : Application
         flyout.ShowPopup();
     }
 
+    /// <summary>
+    /// Opens the Windows snipping overlay; when the snip lands on the clipboard, shows the flyout
+    /// and reads it. The clipboard is watched only until then (or the timeout).
+    /// </summary>
+    public async void StartScreenScan()
+    {
+        _flyout?.HidePopup();
+        StopScreenScan();
+
+        Clipboard.ContentChanged += OnScanClipboardChanged;
+        _scanTimeout = _dispatcher!.CreateTimer();
+        _scanTimeout.Interval = ScreenScanTimeout;
+        _scanTimeout.IsRepeating = false;
+        _scanTimeout.Tick += (_, _) => StopScreenScan();
+        _scanTimeout.Start();
+
+        if (!await Launcher.LaunchUriAsync(new Uri("ms-screenclip:")))
+        {
+            StopScreenScan();
+            ShowFlyout();
+        }
+    }
+
+    private void StopScreenScan()
+    {
+        Clipboard.ContentChanged -= OnScanClipboardChanged;
+        _scanTimeout?.Stop();
+        _scanTimeout = null;
+    }
+
+    // Raised off the UI thread; the snipping tool may change the clipboard more than once.
+    private void OnScanClipboardChanged(object? sender, object e) => _dispatcher?.TryEnqueue(async () =>
+    {
+        try
+        {
+            if (_scanTimeout is null || !Clipboard.GetContent().Contains(StandardDataFormats.Bitmap))
+            {
+                return;
+            }
+        }
+        catch
+        {
+            return; // Clipboard busy; wait for the next change.
+        }
+
+        StopScreenScan();
+        ShowFlyout();
+        await EnsureFlyout().Page.ReadFromClipboardAsync();
+    });
+
     public void ShowSettings()
     {
         _flyout?.HidePopup();
@@ -180,6 +236,7 @@ public partial class App : Application
     private void ExitApp()
     {
         _isExiting = true;
+        StopScreenScan();
         _flyout?.CloseWindow();
         _settings?.Close();
 

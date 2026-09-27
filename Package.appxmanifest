@@ -3,7 +3,7 @@
   <Identity Name="73EB079D-ABAC-415A-9880-FA8C94D6D84B" Publisher="CN=AppPublisher" Version="1.0.0.0" />
   <mp:PhoneIdentity PhoneProductId="73EB079D-ABAC-415A-9880-FA8C94D6D84B" PhonePublisherId="00000000-0000-0000-0000-000000000000" />
   <Properties>
-    <DisplayName>Tray Qr</DisplayName>
+    <DisplayName>Tray QR</DisplayName>
     <PublisherDisplayName>AppPublisher</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
@@ -16,19 +16,18 @@
   </Resources>
   <Applications>
     <Application Id="App" Executable="$targetnametoken$.exe" EntryPoint="$targetentrypoint$">
-      <uap:VisualElements DisplayName="Tray Qr" Description="Tray Qr in the system tray." BackgroundColor="transparent" Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png">
+      <uap:VisualElements DisplayName="Tray QR" Description="Create and read QR codes from the system tray." BackgroundColor="transparent" Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png">
         <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
         <uap:SplashScreen Image="Assets\SplashScreen.png" />
       </uap:VisualElements>
       <Extensions>
         <uap5:Extension Category="windows.startupTask">
-          <uap5:StartupTask TaskId="TrayQrStartup" Enabled="false" DisplayName="Tray Qr" />
+          <uap5:StartupTask TaskId="TrayQrStartup" Enabled="false" DisplayName="Tray QR" />
         </uap5:Extension>
       </Extensions>
     </Application>
   </Applications>
   <Capabilities>
-    <Capability Name="internetClient" />
     <rescap:Capability Name="runFullTrust" />
     <systemai:Capability Name="systemAIModels" />
   </Capabilities>
