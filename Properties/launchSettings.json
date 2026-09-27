@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "TrayQr (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "TrayQr (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
