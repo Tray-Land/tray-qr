@@ -54,3 +54,7 @@ dotnet test -c Debug -p:Platform=$Platform
 - [WinUI 3 / Windows App SDK](https://learn.microsoft.com/windows/apps/windows-app-sdk/)
 - [ZXing.Net](https://github.com/micjahn/ZXing.Net) to encode and decode QR codes
 - [WinUIEx](https://github.com/dotMorten/WinUIEx) and [CsWin32](https://github.com/microsoft/CsWin32)
+
+## License
+
+[MIT](LICENSE)
