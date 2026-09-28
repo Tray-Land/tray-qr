@@ -37,6 +37,18 @@ internal static class SettingsService
         set => Set(nameof(ErrorCorrection), (int)value);
     }
 
+    public static QrColor ForegroundColor
+    {
+        get => QrColor.FromHex(Get(nameof(ForegroundColor), string.Empty), QrColor.Black);
+        set => Set(nameof(ForegroundColor), value.ToHex());
+    }
+
+    public static QrColor BackgroundColor
+    {
+        get => QrColor.FromHex(Get(nameof(BackgroundColor), string.Empty), QrColor.White);
+        set => Set(nameof(BackgroundColor), value.ToHex());
+    }
+
     public static T? GetJson<T>(string key, JsonTypeInfo<T> typeInfo)
     {
         if (Get<string?>(key, null) is not { } json)

@@ -14,6 +14,41 @@ public enum QrErrorCorrection
     High,
 }
 
+/// <summary>An opaque RGB color for rendering QR codes, independent of WinRT so it can be tested.</summary>
+public readonly record struct QrColor(byte R, byte G, byte B)
+{
+    public static readonly QrColor Black = new(0, 0, 0);
+    public static readonly QrColor White = new(255, 255, 255);
+
+    /// <summary>Formats as <c>#RRGGBB</c>.</summary>
+    public string ToHex() => $"#{R:X2}{G:X2}{B:X2}";
+
+    /// <summary>Parses <c>#RRGGBB</c> (the <c>#</c> is optional), or returns <paramref name="fallback"/>.</summary>
+    public static QrColor FromHex(string? hex, QrColor fallback)
+    {
+        string digits = hex?.Trim().TrimStart('#') ?? string.Empty;
+        return digits.Length == 6 && uint.TryParse(digits, System.Globalization.NumberStyles.HexNumber, null, out uint rgb)
+            ? new QrColor((byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb)
+            : fallback;
+    }
+
+    /// <summary>WCAG contrast ratio between two colors, from 1 (identical) to 21 (black on white).</summary>
+    public static double ContrastRatio(QrColor a, QrColor b)
+    {
+        double la = a.RelativeLuminance();
+        double lb = b.RelativeLuminance();
+        return (Math.Max(la, lb) + 0.05) / (Math.Min(la, lb) + 0.05);
+    }
+
+    private double RelativeLuminance() => (0.2126 * Linear(R)) + (0.7152 * Linear(G)) + (0.0722 * Linear(B));
+
+    private static double Linear(byte channel)
+    {
+        double c = channel / 255.0;
+        return c <= 0.03928 ? c / 12.92 : Math.Pow((c + 0.055) / 1.055, 2.4);
+    }
+}
+
 /// <summary>A QR code as a square grid of modules, including its quiet zone.</summary>
 public sealed class QrMatrix(bool[] modules, int size)
 {
@@ -67,8 +102,14 @@ public static class QrCodec
         }
     }
 
+    /// <summary>Codes below this contrast ratio are hard for many scanners to read.</summary>
+    public const double MinReadableContrast = 3.0;
+
+    /// <summary>Renders the matrix as black-on-white BGRA8 pixels, <paramref name="scale"/> pixels per module.</summary>
+    public static byte[] RenderBgra(QrMatrix matrix, int scale) => RenderBgra(matrix, scale, QrColor.Black, QrColor.White);
+
     /// <summary>Renders the matrix as BGRA8 pixels, <paramref name="scale"/> pixels per module.</summary>
-    public static byte[] RenderBgra(QrMatrix matrix, int scale)
+    public static byte[] RenderBgra(QrMatrix matrix, int scale, QrColor foreground, QrColor background)
     {
         int width = matrix.Size * scale;
         byte[] pixels = new byte[width * width * 4];
@@ -77,11 +118,11 @@ public static class QrCodec
             int row = y / scale;
             for (int x = 0; x < width; x++)
             {
-                byte value = matrix.IsDark(x / scale, row) ? (byte)0 : (byte)255;
+                QrColor color = matrix.IsDark(x / scale, row) ? foreground : background;
                 int i = ((y * width) + x) * 4;
-                pixels[i] = value;
-                pixels[i + 1] = value;
-                pixels[i + 2] = value;
+                pixels[i] = color.B;
+                pixels[i + 1] = color.G;
+                pixels[i + 2] = color.R;
                 pixels[i + 3] = 255;
             }
         }

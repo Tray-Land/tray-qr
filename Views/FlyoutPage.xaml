@@ -54,6 +54,7 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
             <TextBox
@@ -66,52 +67,135 @@
                 TextChanged="InputBox_TextChanged"
                 TextWrapping="Wrap" />
 
-            <!--  QR codes stay black on white in both themes so every scanner can read them.  -->
+            <!--  No frame of its own: the code's quiet zone is its border, and the corner radius rounds it.  -->
             <Border
                 Grid.Row="1"
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center"
-                Background="White"
-                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                BorderThickness="1"
                 CornerRadius="8">
                 <Grid Width="232" Height="232">
                     <Image
                         x:Name="QrImage"
                         AutomationProperties.Name="QR code"
                         Stretch="Uniform" />
+                    <FontIcon
+                        x:Name="QrPlaceholderIcon"
+                        AutomationProperties.Name="Your QR code will appear here"
+                        FontSize="120"
+                        Foreground="{ThemeResource TextFillColorDisabledBrush}"
+                        Glyph="&#xED14;" />
                     <TextBlock
-                        x:Name="QrPlaceholder"
+                        x:Name="TooLongMessage"
                         Margin="24"
                         HorizontalAlignment="Center"
                         VerticalAlignment="Center"
-                        Foreground="#8A000000"
-                        Text="Your QR code will appear here"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="Too much text for a QR code. Shorten it or lower the error correction."
                         TextAlignment="Center"
-                        TextWrapping="Wrap" />
+                        TextWrapping="Wrap"
+                        Visibility="Collapsed" />
                 </Grid>
             </Border>
 
-            <Grid Grid.Row="2" ColumnSpacing="8">
+            <StackPanel
+                x:Name="LowContrastWarning"
+                Grid.Row="2"
+                HorizontalAlignment="Center"
+                Orientation="Horizontal"
+                Spacing="6"
+                Visibility="Collapsed">
+                <FontIcon
+                    FontSize="14"
+                    Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                    Glyph="&#xE7BA;" />
+                <TextBlock
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Text="Low contrast: some scanners may not read this code" />
+            </StackPanel>
+
+            <Grid Grid.Row="3" ColumnSpacing="8">
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <ComboBox
-                    x:Name="ErrorCorrectionBox"
-                    HorizontalAlignment="Stretch"
-                    AutomationProperties.Name="Error correction"
-                    SelectionChanged="ErrorCorrectionBox_SelectionChanged"
-                    ToolTipService.ToolTip="Error correction: higher levels survive more damage but make a denser code">
-                    <x:String>Low (7%)</x:String>
-                    <x:String>Medium (15%)</x:String>
-                    <x:String>Quartile (25%)</x:String>
-                    <x:String>High (30%)</x:String>
-                </ComboBox>
+                <Button
+                    x:Name="ForegroundButton"
+                    Width="48"
+                    AutomationProperties.Name="Code color"
+                    ToolTipService.ToolTip="Code color">
+                    <Viewbox Width="18" Height="18">
+                        <FontIcon x:Name="ForegroundSwatch" Glyph="&#xED14;" />
+                    </Viewbox>
+                    <Button.Flyout>
+                        <Flyout Closed="ColorFlyout_Closed" Placement="LeftEdgeAlignedBottom" ShouldConstrainToRootBounds="False">
+                            <StackPanel Spacing="8">
+                                <ColorPicker
+                                    x:Name="ForegroundPicker"
+                                    AutomationProperties.Name="Code color"
+                                    ColorChanged="ColorPicker_ColorChanged"
+                                    ColorSpectrumShape="Box"
+                                    IsAlphaEnabled="False"
+                                    IsColorChannelTextInputVisible="False"
+                                    IsColorPreviewVisible="False"
+                                    IsMoreButtonVisible="False" />
+                                <Button
+                                    HorizontalAlignment="Stretch"
+                                    Click="ResetColors_Click"
+                                    Content="Reset to black on white" />
+                            </StackPanel>
+                        </Flyout>
+                    </Button.Flyout>
+                </Button>
+                <Button
+                    x:Name="BackgroundButton"
+                    Grid.Column="1"
+                    Width="48"
+                    AutomationProperties.Name="Background color"
+                    ToolTipService.ToolTip="Background color">
+                    <!--  The stroke keeps a white square visible on the light theme's button.  -->
+                    <Rectangle
+                        x:Name="BackgroundSwatch"
+                        Width="16"
+                        Height="16"
+                        Stroke="{ThemeResource ControlStrokeColorDefaultBrush}"
+                        StrokeThickness="1" />
+                    <Button.Flyout>
+                        <Flyout Closed="ColorFlyout_Closed" Placement="LeftEdgeAlignedBottom" ShouldConstrainToRootBounds="False">
+                            <StackPanel Spacing="8">
+                                <ColorPicker
+                                    x:Name="BackgroundPicker"
+                                    AutomationProperties.Name="Background color"
+                                    ColorChanged="ColorPicker_ColorChanged"
+                                    ColorSpectrumShape="Box"
+                                    IsAlphaEnabled="False"
+                                    IsColorChannelTextInputVisible="False"
+                                    IsColorPreviewVisible="False"
+                                    IsMoreButtonVisible="False" />
+                                <Button
+                                    HorizontalAlignment="Stretch"
+                                    Click="ResetColors_Click"
+                                    Content="Reset to black on white" />
+                            </StackPanel>
+                        </Flyout>
+                    </Button.Flyout>
+                </Button>
+                <DropDownButton
+                    x:Name="ErrorCorrectionButton"
+                    Grid.Column="2"
+                    AutomationProperties.Name="Error correction">
+                    <TextBlock x:Name="ErrorCorrectionText" />
+                    <DropDownButton.Flyout>
+                        <MenuFlyout x:Name="ErrorCorrectionMenu" Placement="Top" />
+                    </DropDownButton.Flyout>
+                </DropDownButton>
                 <Button
                     x:Name="CopyImageButton"
-                    Grid.Column="1"
+                    Grid.Column="4"
                     AutomationProperties.Name="Copy image"
                     Click="CopyImageButton_Click"
                     IsEnabled="False"
@@ -120,7 +204,7 @@
                 </Button>
                 <Button
                     x:Name="SaveImageButton"
-                    Grid.Column="2"
+                    Grid.Column="5"
                     AutomationProperties.Name="Save as PNG"
                     Click="SaveImageButton_Click"
                     IsEnabled="False"

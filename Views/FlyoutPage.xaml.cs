@@ -1,7 +1,9 @@
+using Microsoft.UI;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using TrayQr.Services;
 using Windows.ApplicationModel.DataTransfer;
@@ -23,8 +25,19 @@ public sealed partial class FlyoutPage : Page, IDisposable
     private const int ExportPixels = 1024;
     private const int PreviewPixels = 512;
 
+    private static readonly (string Letter, string Name)[] ErrorCorrectionLevels =
+    [
+        ("L", "Low (7%)"),
+        ("M", "Medium (15%)"),
+        ("Q", "Quartile (25%)"),
+        ("H", "High (30%)"),
+    ];
+
     private readonly DispatcherQueueTimer _encodeTimer;
     private QrMatrix? _matrix;
+    private QrErrorCorrection _level;
+    private QrColor _foreground;
+    private QrColor _background;
 
     public FlyoutPage()
     {
@@ -35,7 +48,18 @@ public sealed partial class FlyoutPage : Page, IDisposable
         _encodeTimer.IsRepeating = false;
         _encodeTimer.Tick += (_, _) => UpdateQrCode();
 
-        ErrorCorrectionBox.SelectedIndex = (int)SettingsService.ErrorCorrection;
+        for (int i = 0; i < ErrorCorrectionLevels.Length; i++)
+        {
+            RadioMenuFlyoutItem item = new() { Text = ErrorCorrectionLevels[i].Name, Tag = (QrErrorCorrection)i, GroupName = "ErrorCorrection" };
+            item.Click += ErrorCorrectionItem_Click;
+            ErrorCorrectionMenu.Items.Add(item);
+        }
+
+        _level = SettingsService.ErrorCorrection;
+        _foreground = SettingsService.ForegroundColor;
+        _background = SettingsService.BackgroundColor;
+        ShowErrorCorrection();
+        ShowColors();
         InputBox.Text = SettingsService.LastText;
         UpdateQrCode();
     }
@@ -80,28 +104,89 @@ public sealed partial class FlyoutPage : Page, IDisposable
         _encodeTimer.Start();
     }
 
-    private void ErrorCorrectionBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void ErrorCorrectionItem_Click(object sender, RoutedEventArgs e)
     {
-        if (ErrorCorrectionBox.SelectedIndex >= 0)
+        _level = (QrErrorCorrection)((FrameworkElement)sender).Tag;
+        SettingsService.ErrorCorrection = _level;
+        ShowErrorCorrection();
+        UpdateQrCode();
+    }
+
+    private void ShowErrorCorrection()
+    {
+        (string letter, string name) = ErrorCorrectionLevels[(int)_level];
+        ErrorCorrectionText.Text = letter;
+        ToolTipService.SetToolTip(ErrorCorrectionButton, $"Error correction: {name}. Higher levels survive more damage but make a denser code.");
+        foreach (RadioMenuFlyoutItem item in ErrorCorrectionMenu.Items.OfType<RadioMenuFlyoutItem>())
         {
-            SettingsService.ErrorCorrection = (QrErrorCorrection)ErrorCorrectionBox.SelectedIndex;
-            UpdateQrCode();
+            item.IsChecked = (QrErrorCorrection)item.Tag == _level;
         }
     }
+
+    private void ColorPicker_ColorChanged(ColorPicker sender, ColorChangedEventArgs args)
+    {
+        QrColor color = new(args.NewColor.R, args.NewColor.G, args.NewColor.B);
+        if (sender == ForegroundPicker)
+        {
+            _foreground = color;
+        }
+        else
+        {
+            _background = color;
+        }
+
+        ShowColorSwatches();
+        RenderPreview();
+    }
+
+    private void ColorFlyout_Closed(object sender, object e)
+    {
+        SettingsService.ForegroundColor = _foreground;
+        SettingsService.BackgroundColor = _background;
+    }
+
+    private void ResetColors_Click(object sender, RoutedEventArgs e)
+    {
+        _foreground = QrColor.Black;
+        _background = QrColor.White;
+        ShowColors();
+        RenderPreview();
+    }
+
+    private void ShowColors()
+    {
+        ForegroundPicker.Color = ToColor(_foreground);
+        BackgroundPicker.Color = ToColor(_background);
+        ShowColorSwatches();
+    }
+
+    private void ShowColorSwatches()
+    {
+        ForegroundSwatch.Foreground = new SolidColorBrush(ToColor(_foreground));
+        BackgroundSwatch.Fill = new SolidColorBrush(ToColor(_background));
+    }
+
+    private static Windows.UI.Color ToColor(QrColor color) => ColorHelper.FromArgb(255, color.R, color.G, color.B);
 
     private void UpdateQrCode()
     {
         string text = InputBox.Text;
-        QrErrorCorrection level = (QrErrorCorrection)Math.Max(0, ErrorCorrectionBox.SelectedIndex);
-        _matrix = QrCodec.Encode(text, level);
+        _matrix = QrCodec.Encode(text, _level);
 
         bool hasCode = _matrix is not null;
         CopyImageButton.IsEnabled = hasCode;
         SaveImageButton.IsEnabled = hasCode;
-        QrPlaceholder.Visibility = hasCode ? Visibility.Collapsed : Visibility.Visible;
-        QrPlaceholder.Text = text.Length == 0
-            ? "Your QR code will appear here"
-            : "Too much text for a QR code. Shorten it or lower the error correction.";
+        QrPlaceholderIcon.Visibility = text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        TooLongMessage.Visibility = !hasCode && text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        RenderPreview();
+    }
+
+    private void RenderPreview()
+    {
+        LowContrastWarning.Visibility = _matrix is not null && QrColor.ContrastRatio(_foreground, _background) < QrCodec.MinReadableContrast
+            ? Visibility.Visible
+            : Visibility.Collapsed;
 
         if (_matrix is null)
         {
@@ -110,7 +195,7 @@ public sealed partial class FlyoutPage : Page, IDisposable
         }
 
         int scale = QrCodec.ScaleFor(_matrix, PreviewPixels);
-        QrImage.Source = QrImageService.ToBitmap(QrCodec.RenderBgra(_matrix, scale), _matrix.Size * scale);
+        QrImage.Source = QrImageService.ToBitmap(QrCodec.RenderBgra(_matrix, scale, _foreground, _background), _matrix.Size * scale);
     }
 
     private (byte[] Pixels, int Size)? RenderExport()
@@ -121,7 +206,7 @@ public sealed partial class FlyoutPage : Page, IDisposable
         }
 
         int scale = QrCodec.ScaleFor(_matrix, ExportPixels);
-        return (QrCodec.RenderBgra(_matrix, scale), _matrix.Size * scale);
+        return (QrCodec.RenderBgra(_matrix, scale, _foreground, _background), _matrix.Size * scale);
     }
 
     private async void CopyImageButton_Click(object sender, RoutedEventArgs e)
