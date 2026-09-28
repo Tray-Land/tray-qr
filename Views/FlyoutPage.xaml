@@ -77,6 +77,7 @@
                     <Image
                         x:Name="QrImage"
                         AutomationProperties.Name="QR code"
+                        DragStarting="QrImage_DragStarting"
                         Stretch="Uniform" />
                     <FontIcon
                         x:Name="QrPlaceholderIcon"

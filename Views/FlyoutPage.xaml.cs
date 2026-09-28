@@ -176,6 +176,8 @@ public sealed partial class FlyoutPage : Page, IDisposable
         bool hasCode = _matrix is not null;
         CopyImageButton.IsEnabled = hasCode;
         SaveImageButton.IsEnabled = hasCode;
+        QrImage.CanDrag = hasCode;
+        ToolTipService.SetToolTip(QrImage, hasCode ? "Drag into a folder, chat, or document" : null);
         QrPlaceholderIcon.Visibility = text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         TooLongMessage.Visibility = !hasCode && text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
 
@@ -248,6 +250,34 @@ public sealed partial class FlyoutPage : Page, IDisposable
         {
             await QrImageService.SavePngAsync(image.Pixels, image.Size, file);
             ShowButtonDone(SaveImageButton, "Saved");
+        }
+    }
+
+    // Offers the code as both a PNG file (Explorer, chat apps) and a bitmap (documents, editors).
+    private async void QrImage_DragStarting(UIElement sender, DragStartingEventArgs args)
+    {
+        if (RenderExport() is not { } image)
+        {
+            args.Cancel = true;
+            return;
+        }
+
+        DragOperationDeferral deferral = args.GetDeferral();
+        try
+        {
+            StorageFile file = await QrImageService.SaveDragPngAsync(image.Pixels, image.Size, $"{SuggestFileName(InputBox.Text)}.png");
+            args.AllowedOperations = DataPackageOperation.Copy;
+            args.Data.RequestedOperation = DataPackageOperation.Copy;
+            args.Data.SetStorageItems([file]);
+            args.Data.SetBitmap(RandomAccessStreamReference.CreateFromFile(file));
+        }
+        catch (Exception)
+        {
+            args.Cancel = true;
+        }
+        finally
+        {
+            deferral.Complete();
         }
     }
 

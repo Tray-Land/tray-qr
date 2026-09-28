@@ -45,6 +45,29 @@ internal static class QrImageService
         await RandomAccessStream.CopyAndCloseAsync(png.GetInputStreamAt(0), output.GetOutputStreamAt(0));
     }
 
+    /// <summary>
+    /// Writes the PNG to a fresh file in the app's temp folder for drag-and-drop, which needs a real
+    /// file for Explorer. Earlier drag files are cleared first, so at most one drag's worth is kept.
+    /// </summary>
+    public static async Task<StorageFile> SaveDragPngAsync(byte[] bgra, int size, string fileName)
+    {
+        StorageFolder temp = ApplicationData.Current.TemporaryFolder;
+        StorageFolder folder;
+        try
+        {
+            folder = await temp.CreateFolderAsync("Drag", CreationCollisionOption.ReplaceExisting);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            // A drop target may still hold the previous file open; reuse the folder then.
+            folder = await temp.CreateFolderAsync("Drag", CreationCollisionOption.OpenIfExists);
+        }
+
+        StorageFile file = await folder.CreateFileAsync(fileName, CreationCollisionOption.GenerateUniqueName);
+        await SavePngAsync(bgra, size, file);
+        return file;
+    }
+
     public static async Task CopyPngAsync(byte[] bgra, int size)
     {
         InMemoryRandomAccessStream png = await EncodePngAsync(bgra, size);
