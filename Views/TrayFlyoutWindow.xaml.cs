@@ -3,6 +3,7 @@ using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media.Animation;
 using TrayQr.Controls;
 using TrayQr.Services;
 using Windows.Graphics;
@@ -46,7 +47,7 @@ public sealed partial class TrayFlyoutWindow : WindowEx
     private static readonly TimeSpan CloseDelay = TimeSpan.FromMinutes(1);
 
     private readonly HWND _hwnd;
-    private readonly FlyoutPage _page = new();
+    private readonly FlyoutPage _page;
     private readonly ShellBackdrop _backdrop = new();
     private readonly UISettings _uiSettings = new();
     private readonly DispatcherQueueTimer _hideTimer;
@@ -78,6 +79,10 @@ public sealed partial class TrayFlyoutWindow : WindowEx
     {
         InitializeComponent();
         _hwnd = (HWND)WindowNative.GetWindowHandle(this);
+
+        // FlyoutPage is cached (NavigationCacheMode.Required), so going back from Settings returns this same instance.
+        PageFrame.Navigate(typeof(FlyoutPage));
+        _page = (FlyoutPage)PageFrame.Content;
         _page.WindowHandle = _hwnd;
         _page.RequestShow = () =>
         {
@@ -86,7 +91,6 @@ public sealed partial class TrayFlyoutWindow : WindowEx
                 ShowPopup();
             }
         };
-        PageHost.Content = _page;
 
         SystemBackdrop = _backdrop;
         ApplyShellTheme();
@@ -135,6 +139,12 @@ public sealed partial class TrayFlyoutWindow : WindowEx
 
     public void ShowPopup()
     {
+        // Every open starts on the main page, like the shell's own flyouts.
+        if (PageFrame.CanGoBack)
+        {
+            PageFrame.GoBack(new SuppressNavigationTransitionInfo());
+        }
+
         // Position before showing so the window never flashes at a stale location.
         WindowPlacementService.PositionNearTray(this, PopupWidth, PopupHeight);
         _baseX = AppWindow.Position.X;
@@ -154,6 +164,20 @@ public sealed partial class TrayFlyoutWindow : WindowEx
         PInvoke.SetForegroundWindow(_hwnd);
 
         _page.OnShown();
+    }
+
+    /// <summary>Shows the popup if needed and slides in the settings page.</summary>
+    public void ShowSettings()
+    {
+        if (!_isPopupVisible)
+        {
+            ShowPopup();
+        }
+
+        if (PageFrame.Content is not SettingsPage)
+        {
+            PageFrame.Navigate(typeof(SettingsPage), null, new SlideNavigationTransitionInfo { Effect = SlideNavigationTransitionEffect.FromRight });
+        }
     }
 
     public void HidePopup()
@@ -376,6 +400,13 @@ public sealed partial class TrayFlyoutWindow : WindowEx
     private void Escape_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
     {
         args.Handled = true;
-        HidePopup();
+        if (PageFrame.CanGoBack)
+        {
+            PageFrame.GoBack();
+        }
+        else
+        {
+            HidePopup();
+        }
     }
 }

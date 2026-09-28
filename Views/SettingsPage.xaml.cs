@@ -1,27 +1,37 @@
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Navigation;
 using TrayQr.Services;
 using Windows.ApplicationModel;
-using WinUIEx;
 
 namespace TrayQr.Views;
 
-public sealed partial class SettingsWindow : WindowEx
+/// <summary>Settings, shown inside the flyout's frame. The back button (or Esc) returns to <see cref="FlyoutPage"/>.</summary>
+public sealed partial class SettingsPage : Page
 {
     private bool _loading = true;
 
-    public SettingsWindow()
+    public SettingsPage()
     {
         InitializeComponent();
-        Title = $"{App.DisplayName} Settings";
-        AppTitleBar.Title = Title;
-        ExtendsContentIntoTitleBar = true;
-        SetTitleBar(AppTitleBar);
-        AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico"));
-        WindowPlacementService.CenterOnPrimary(this, 480, 560);
-
         VersionText.Text = $"{App.DisplayName} {GetVersion()}";
-        _ = LoadStartupStateAsync();
         _loading = false;
+    }
+
+    // Re-read each time: the user can change the startup task in Windows Settings while we're away.
+    protected override async void OnNavigatedTo(NavigationEventArgs e)
+    {
+        base.OnNavigatedTo(e);
+        BackButton.Focus(FocusState.Programmatic);
+        await LoadStartupStateAsync();
+    }
+
+    private void BackButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (Frame.CanGoBack)
+        {
+            Frame.GoBack();
+        }
     }
 
     private static string GetVersion()
