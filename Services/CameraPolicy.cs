@@ -3,7 +3,7 @@ namespace TrayQr.Services;
 /// <summary>One video format a camera offers, independent of WinRT so it can be tested.</summary>
 public readonly record struct VideoFormat(int Width, int Height, double FramesPerSecond);
 
-/// <summary>Choices the Camera tab makes about which camera and which format to use.</summary>
+/// <summary>Decides which camera and which video format the Camera tab uses.</summary>
 public static class CameraPolicy
 {
     // QR detection doesn't need more than 720p, and smaller frames decode faster.
@@ -12,8 +12,8 @@ public static class CameraPolicy
     private const double MinFramesPerSecond = 15;
 
     /// <summary>
-    /// The index of the format closest to 720p, preferring smooth frame rates and never above
-    /// 1080p when something smaller exists; null when there are no formats.
+    /// Returns the index of the format closest to 720p, preferring smooth frame rates and never
+    /// going above 1080p when something smaller exists; returns null when there are no formats.
     /// </summary>
     public static int? ChooseFormat(IReadOnlyList<VideoFormat> formats)
     {
@@ -30,7 +30,7 @@ public static class CameraPolicy
             .First();
     }
 
-    /// <summary>The saved camera if it's still connected, otherwise the first one; null when there are none.</summary>
+    /// <summary>Returns the saved camera if it's still connected, otherwise the first one; returns null when there are none.</summary>
     public static string? PickCamera(IReadOnlyList<string> ids, string? savedId) =>
         savedId is not null && ids.Contains(savedId) ? savedId : ids.FirstOrDefault();
 }
