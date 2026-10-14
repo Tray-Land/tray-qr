@@ -19,6 +19,7 @@
     <Using Include="Xunit" />
     <!-- Pure logic from the app, linked so it's tested without WinRT. -->
     <Compile Include="..\Services\QrCodec.cs" Link="QrCodec.cs" />
+    <Compile Include="..\Services\CameraPolicy.cs" Link="CameraPolicy.cs" />
   </ItemGroup>
 
 </Project>

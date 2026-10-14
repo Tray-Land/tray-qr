@@ -91,6 +91,14 @@ public sealed partial class TrayFlyoutWindow : WindowEx
                 ShowPopup();
             }
         };
+        _page.RequestFocus = () =>
+        {
+            if (_isPopupVisible)
+            {
+                Activate();
+                PInvoke.SetForegroundWindow(_hwnd);
+            }
+        };
 
         SystemBackdrop = _backdrop;
         ApplyShellTheme();
@@ -372,6 +380,13 @@ public sealed partial class TrayFlyoutWindow : WindowEx
 
     private bool ShouldRemainVisible(HWND foreground)
     {
+        // The camera consent prompt belongs to the system, not this window, but answering it is
+        // part of using the flyout.
+        if (_page.IsAwaitingCameraConsent)
+        {
+            return true;
+        }
+
         if (foreground == HWND.Null)
         {
             return false;

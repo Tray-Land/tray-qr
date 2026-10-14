@@ -5,8 +5,12 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Microsoft.UI.Xaml.Navigation;
 using TrayQr.Services;
 using Windows.ApplicationModel.DataTransfer;
+using Windows.Devices.Enumeration;
+using Windows.Graphics.Imaging;
+using Windows.Security.Authorization.AppCapabilityAccess;
 using Windows.Storage;
 using Windows.Storage.Pickers;
 using Windows.Storage.Streams;
@@ -16,8 +20,9 @@ using WinRT.Interop;
 namespace TrayQr.Views;
 
 /// <summary>
-/// The flyout's content: a Create tab that turns text into a QR code as you type, and a Read tab
-/// that finds codes in a pasted, dropped, opened, or snipped image. Nothing runs while hidden.
+/// The flyout's content: a Create tab that turns text into a QR code as you type, a Read tab that
+/// finds codes in a pasted, dropped, opened, or snipped image, and a Camera tab that reads codes
+/// from a webcam. Nothing runs while hidden: the camera is on only while its tab is on screen.
 /// </summary>
 public sealed partial class FlyoutPage : Page, IDisposable
 {
@@ -38,6 +43,13 @@ public sealed partial class FlyoutPage : Page, IDisposable
     private QrErrorCorrection _level;
     private QrColor _foreground;
     private QrColor _background;
+
+    // Camera starts and stops run one at a time; a newer request bumps the generation so an older
+    // start that is still awaiting gives up instead of leaving the camera on.
+    private readonly SemaphoreSlim _cameraLock = new(1, 1);
+    private CameraScanner? _scanner;
+    private int _cameraGeneration;
+    private bool _isCameraFrozen;
 
     public FlyoutPage()
     {
@@ -70,24 +82,50 @@ public sealed partial class FlyoutPage : Page, IDisposable
     /// <summary>Brings the flyout back if it light-dismissed while a file picker had focus.</summary>
     public Action? RequestShow { get; set; }
 
-    private bool IsReadMode => ModeSelector.SelectedItem == ReadItem;
+    /// <summary>Gives the flyout focus back after Windows' camera consent prompt is answered.</summary>
+    public Action? RequestFocus { get; set; }
+
+    /// <summary>True while the camera consent prompt may be up; the flyout doesn't light-dismiss meanwhile.</summary>
+    public bool IsAwaitingCameraConsent { get; private set; }
+
+    private bool IsCameraMode => ModeSelector.SelectedItem == CameraItem;
 
     public void OnShown()
     {
-        if (!IsReadMode)
+        if (ModeSelector.SelectedItem == CreateItem)
         {
             InputBox.Focus(FocusState.Programmatic);
             InputBox.SelectAll();
+        }
+        else if (IsCameraMode)
+        {
+            _ = StartCameraAsync();
         }
     }
 
     public void OnHidden()
     {
         _encodeTimer.Stop();
+        _ = StopCameraAsync();
         SettingsService.LastText = InputBox.Text;
     }
 
-    public void Dispose() => _encodeTimer.Stop();
+    public void Dispose()
+    {
+        _encodeTimer.Stop();
+        _ = StopCameraAsync();
+    }
+
+    // The settings page covers this one, so the camera stops while it's open.
+    protected override void OnNavigatedFrom(NavigationEventArgs e) => _ = StopCameraAsync();
+
+    protected override void OnNavigatedTo(NavigationEventArgs e)
+    {
+        if (IsCameraMode)
+        {
+            _ = StartCameraAsync();
+        }
+    }
 
     /// <summary>Switches to the Read tab and reads whatever image is on the clipboard (after a screen snip).</summary>
     public Task ReadFromClipboardAsync()
@@ -313,8 +351,29 @@ public sealed partial class FlyoutPage : Page, IDisposable
 
     private void ModeSelector_SelectionChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
     {
-        CreatePanel.Visibility = IsReadMode ? Visibility.Collapsed : Visibility.Visible;
-        ReadPanel.Visibility = IsReadMode ? Visibility.Visible : Visibility.Collapsed;
+        CreatePanel.Visibility = ModeSelector.SelectedItem == CreateItem ? Visibility.Visible : Visibility.Collapsed;
+        ReadPanel.Visibility = ModeSelector.SelectedItem == ReadItem ? Visibility.Visible : Visibility.Collapsed;
+
+        if (IsCameraMode)
+        {
+            // x:Load defers the panel and its media element until the tab is first opened.
+            if (CameraPanel is null)
+            {
+                FindName(nameof(CameraPanel));
+            }
+
+            CameraPanel!.Visibility = Visibility.Visible;
+            _ = StartCameraAsync();
+        }
+        else
+        {
+            if (CameraPanel is not null)
+            {
+                CameraPanel.Visibility = Visibility.Collapsed;
+            }
+
+            _ = StopCameraAsync();
+        }
     }
 
     private void ScanScreenButton_Click(object sender, RoutedEventArgs e) => App.Current.StartScreenScan();
@@ -462,6 +521,219 @@ public sealed partial class FlyoutPage : Page, IDisposable
         InputBox.Text = ResultOf(sender).Text;
         ModeSelector.SelectedItem = CreateItem;
     }
+
+    // ---- Camera ----
+
+    private async Task StartCameraAsync()
+    {
+        int generation = ++_cameraGeneration;
+        await _cameraLock.WaitAsync();
+        CameraScanner? scanner = null;
+        try
+        {
+            await DisposeScannerAsync();
+            if (generation != _cameraGeneration || _isCameraFrozen || CameraPanel is null)
+            {
+                return;
+            }
+
+            ShowCameraStatus(null);
+            CameraStartingRing.IsActive = true;
+
+            IReadOnlyList<DeviceInformation> cameras = await CameraScanner.FindCamerasAsync();
+            if (generation != _cameraGeneration)
+            {
+                return;
+            }
+
+            string? id = CameraPolicy.PickCamera(cameras.Select(c => c.Id).ToList(), SettingsService.CameraId);
+            ShowCameraChoices(cameras, id);
+            if (cameras.FirstOrDefault(c => c.Id == id) is not { } camera)
+            {
+                ShowCameraStatus("No camera found. Connect one and try again.");
+                return;
+            }
+
+            // Mirror every camera except one on the back of the device, so moving a code feels natural.
+            CameraMirror.ScaleX = camera.EnclosureLocation?.Panel == Windows.Devices.Enumeration.Panel.Back ? 1 : -1;
+
+            scanner = new CameraScanner();
+            CameraScanner started = scanner;
+            scanner.CodesFound += (codes, snapshot) => DispatcherQueue.TryEnqueue(() => _ = ShowCameraCodesAsync(started, codes, snapshot));
+            scanner.Failed += message => DispatcherQueue.TryEnqueue(() => _ = StopCameraWithMessageAsync(started, $"The camera stopped: {message}"));
+            // On first use, starting the camera shows Windows' consent prompt, which takes focus.
+            // The window keeps the flyout open behind it, and takes focus back once it's answered.
+            IsAwaitingCameraConsent = NeedsCameraConsent();
+            try
+            {
+                await scanner.StartAsync(camera.Id, CameraPreview);
+            }
+            finally
+            {
+                if (IsAwaitingCameraConsent)
+                {
+                    IsAwaitingCameraConsent = false;
+                    RequestFocus?.Invoke();
+                }
+            }
+
+            if (generation == _cameraGeneration)
+            {
+                _scanner = scanner;
+                scanner = null;
+            }
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (generation == _cameraGeneration)
+            {
+                ShowCameraStatus("Camera access is off for Tray QR.", showPrivacyLink: true);
+            }
+        }
+        catch (Exception ex)
+        {
+            if (generation == _cameraGeneration)
+            {
+                ShowCameraStatus($"Couldn't start the camera: {ex.Message}");
+            }
+        }
+        finally
+        {
+            try
+            {
+                // A start that was overtaken (or failed halfway) leaves nothing running.
+                if (scanner is not null)
+                {
+                    await scanner.DisposeAsync();
+                }
+            }
+            finally
+            {
+                if (CameraPanel is not null)
+                {
+                    CameraStartingRing.IsActive = false;
+                }
+
+                _cameraLock.Release();
+            }
+        }
+    }
+
+    private static bool NeedsCameraConsent()
+    {
+        // AppCapability arrived in Windows 10 1903; older builds just light-dismiss behind the prompt.
+        if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 18362))
+        {
+            return false;
+        }
+
+        try
+        {
+            return AppCapability.Create("Webcam").CheckAccess() == AppCapabilityAccessStatus.UserPromptRequired;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    private async Task StopCameraAsync()
+    {
+        _cameraGeneration++;
+        await _cameraLock.WaitAsync();
+        try
+        {
+            await DisposeScannerAsync();
+        }
+        finally
+        {
+            _cameraLock.Release();
+        }
+    }
+
+    private async Task DisposeScannerAsync()
+    {
+        if (_scanner is { } scanner)
+        {
+            _scanner = null;
+            await scanner.DisposeAsync();
+        }
+    }
+
+    private async Task StopCameraWithMessageAsync(CameraScanner scanner, string message)
+    {
+        if (scanner != _scanner)
+        {
+            return;
+        }
+
+        await StopCameraAsync();
+        ShowCameraStatus(message);
+    }
+
+    // Freezes on the frame with the code and turns the camera off until Scan again.
+    private async Task ShowCameraCodesAsync(CameraScanner scanner, IReadOnlyList<string> codes, SoftwareBitmap snapshot)
+    {
+        if (scanner != _scanner)
+        {
+            snapshot.Dispose();
+            return;
+        }
+
+        _isCameraFrozen = true;
+        _ = StopCameraAsync();
+
+        SoftwareBitmapSource source = new();
+        await source.SetBitmapAsync(snapshot);
+        snapshot.Dispose();
+        CameraSnapshot.Source = source;
+
+        CameraResultsList.ItemsSource = codes.Select(ScanResult.From).ToList();
+        CameraHintText.Visibility = Visibility.Collapsed;
+        ScanAgainButton.Visibility = Visibility.Visible;
+    }
+
+    private void ShowCameraChoices(IReadOnlyList<DeviceInformation> cameras, string? selectedId)
+    {
+        CameraMenu.Items.Clear();
+        foreach (DeviceInformation camera in cameras)
+        {
+            RadioMenuFlyoutItem item = new() { Text = camera.Name, Tag = camera.Id, GroupName = "Camera", IsChecked = camera.Id == selectedId };
+            item.Click += CameraChoice_Click;
+            CameraMenu.Items.Add(item);
+        }
+
+        CameraNameText.Text = cameras.FirstOrDefault(c => c.Id == selectedId)?.Name ?? string.Empty;
+        CameraButton.Visibility = cameras.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void ShowCameraStatus(string? message, bool showPrivacyLink = false)
+    {
+        CameraStatusText.Text = message ?? string.Empty;
+        CameraStatusPanel.Visibility = message is null ? Visibility.Collapsed : Visibility.Visible;
+        PrivacySettingsLink.Visibility = showPrivacyLink ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void ResumeScanning()
+    {
+        _isCameraFrozen = false;
+        CameraSnapshot.Source = null;
+        CameraResultsList.ItemsSource = null;
+        CameraHintText.Visibility = Visibility.Visible;
+        ScanAgainButton.Visibility = Visibility.Collapsed;
+        _ = StartCameraAsync();
+    }
+
+    private void CameraChoice_Click(object sender, RoutedEventArgs e)
+    {
+        SettingsService.CameraId = (string)((FrameworkElement)sender).Tag;
+        ResumeScanning();
+    }
+
+    private void ScanAgainButton_Click(object sender, RoutedEventArgs e) => ResumeScanning();
+
+    private async void PrivacySettingsLink_Click(object sender, RoutedEventArgs e) =>
+        await Launcher.LaunchUriAsync(new Uri("ms-settings:privacy-webcam"));
 
     private void SettingsButton_Click(object sender, RoutedEventArgs e) => App.Current.ShowSettings();
 }

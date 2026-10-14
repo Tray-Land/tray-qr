@@ -7,6 +7,39 @@
     Background="Transparent"
     NavigationCacheMode="Required">
 
+    <Page.Resources>
+        <!--  One decoded code, shared by the Read and Camera tabs.  -->
+        <DataTemplate x:Key="ScanResultTemplate" x:DataType="local:ScanResult">
+            <Border
+                Margin="0,0,0,8"
+                Padding="12"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="8">
+                <StackPanel Spacing="8">
+                    <TextBox
+                        MaxHeight="120"
+                        AutomationProperties.Name="Decoded text"
+                        IsReadOnly="True"
+                        ScrollViewer.VerticalScrollBarVisibility="Auto"
+                        Text="{x:Bind Text}"
+                        TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button
+                            Click="OpenResult_Click"
+                            Content="Open"
+                            Style="{StaticResource AccentButtonStyle}"
+                            ToolTipService.ToolTip="{x:Bind Link}"
+                            Visibility="{x:Bind LinkVisibility}" />
+                        <Button Click="CopyResult_Click" Content="Copy text" />
+                        <Button Click="EditResult_Click" Content="Make new code" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+    </Page.Resources>
+
     <Grid Padding="16,12,12,16" RowSpacing="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -31,6 +64,11 @@
                 <SelectorBarItem x:Name="ReadItem" Text="Read">
                     <SelectorBarItem.Icon>
                         <FontIcon Glyph="&#xE722;" />
+                    </SelectorBarItem.Icon>
+                </SelectorBarItem>
+                <SelectorBarItem x:Name="CameraItem" Text="Camera">
+                    <SelectorBarItem.Icon>
+                        <FontIcon Glyph="&#xE714;" />
                     </SelectorBarItem.Icon>
                 </SelectorBarItem>
             </SelectorBar>
@@ -326,43 +364,127 @@
                     VerticalAlignment="Top"
                     IsActive="False" />
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <ItemsControl x:Name="ResultsList">
+                    <ItemsControl x:Name="ResultsList" ItemTemplate="{StaticResource ScanResultTemplate}">
                         <ItemsControl.ItemContainerTransitions>
                             <TransitionCollection>
                                 <EntranceThemeTransition IsStaggeringEnabled="True" />
                             </TransitionCollection>
                         </ItemsControl.ItemContainerTransitions>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="local:ScanResult">
-                                <Border
-                                    Margin="0,0,0,8"
-                                    Padding="12"
-                                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="8">
-                                    <StackPanel Spacing="8">
-                                        <TextBox
-                                            MaxHeight="120"
-                                            AutomationProperties.Name="Decoded text"
-                                            IsReadOnly="True"
-                                            ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                            Text="{x:Bind Text}"
-                                            TextWrapping="Wrap" />
-                                        <StackPanel Orientation="Horizontal" Spacing="8">
-                                            <Button
-                                                Click="OpenResult_Click"
-                                                Content="Open"
-                                                Style="{StaticResource AccentButtonStyle}"
-                                                ToolTipService.ToolTip="{x:Bind Link}"
-                                                Visibility="{x:Bind LinkVisibility}" />
-                                            <Button Click="CopyResult_Click" Content="Copy text" />
-                                            <Button Click="EditResult_Click" Content="Make new code" />
-                                        </StackPanel>
-                                    </StackPanel>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Grid>
+        </Grid>
+
+        <!--  Camera: realized on first use. The camera runs only while this tab is visible.  -->
+        <Grid
+            x:Name="CameraPanel"
+            Grid.Row="1"
+            x:Load="False"
+            RowSpacing="12">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <Border
+                Height="220"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="8">
+                <Grid>
+                    <!--  Front cameras are mirrored, like a mirror and the Camera app.  -->
+                    <Grid RenderTransformOrigin="0.5,0.5">
+                        <Grid.RenderTransform>
+                            <ScaleTransform x:Name="CameraMirror" />
+                        </Grid.RenderTransform>
+                        <MediaPlayerElement
+                            x:Name="CameraPreview"
+                            AutomationProperties.Name="Camera preview"
+                            Stretch="UniformToFill" />
+                        <Image
+                            x:Name="CameraSnapshot"
+                            AutomationProperties.Name="Camera frame with the code"
+                            Stretch="UniformToFill" />
+                    </Grid>
+                    <StackPanel
+                        x:Name="CameraStatusPanel"
+                        Margin="16"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Spacing="6"
+                        Visibility="Collapsed">
+                        <FontIcon
+                            FontSize="28"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Glyph="&#xE714;" />
+                        <TextBlock
+                            x:Name="CameraStatusText"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            TextAlignment="Center"
+                            TextWrapping="Wrap" />
+                        <HyperlinkButton
+                            x:Name="PrivacySettingsLink"
+                            HorizontalAlignment="Center"
+                            Click="PrivacySettingsLink_Click"
+                            Content="Open camera privacy settings"
+                            Visibility="Collapsed" />
+                    </StackPanel>
+                    <ProgressRing
+                        x:Name="CameraStartingRing"
+                        Width="32"
+                        Height="32"
+                        IsActive="False" />
+                </Grid>
+            </Border>
+
+            <Grid Grid.Row="1" ColumnSpacing="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <DropDownButton
+                    x:Name="CameraButton"
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Left"
+                    AutomationProperties.Name="Camera"
+                    ToolTipService.ToolTip="Choose a camera"
+                    Visibility="Collapsed">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon FontSize="14" Glyph="&#xE714;" />
+                        <TextBlock x:Name="CameraNameText" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                    <DropDownButton.Flyout>
+                        <MenuFlyout x:Name="CameraMenu" Placement="Bottom" />
+                    </DropDownButton.Flyout>
+                </DropDownButton>
+                <Button
+                    x:Name="ScanAgainButton"
+                    Grid.Column="1"
+                    Click="ScanAgainButton_Click"
+                    Visibility="Collapsed">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon FontSize="14" Glyph="&#xE72C;" />
+                        <TextBlock Text="Scan again" />
+                    </StackPanel>
+                </Button>
+            </Grid>
+
+            <Grid Grid.Row="2">
+                <TextBlock
+                    x:Name="CameraHintText"
+                    Margin="4,0"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Text="Hold a QR code up to the camera."
+                    TextWrapping="Wrap" />
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <ItemsControl x:Name="CameraResultsList" ItemTemplate="{StaticResource ScanResultTemplate}">
+                        <ItemsControl.ItemContainerTransitions>
+                            <TransitionCollection>
+                                <EntranceThemeTransition />
+                            </TransitionCollection>
+                        </ItemsControl.ItemContainerTransitions>
                     </ItemsControl>
                 </ScrollViewer>
             </Grid>
