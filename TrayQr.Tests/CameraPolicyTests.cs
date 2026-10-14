@@ -21,6 +21,14 @@ public class CameraPolicyTests
     }
 
     [Fact]
+    public void ChooseFormat_SameWidthAndFrameRate_Prefers720High()
+    {
+        VideoFormat[] formats = [new(1280, 2160, 30), new(1280, 960, 30), new(1280, 720, 30)];
+
+        Assert.Equal(2, CameraPolicy.ChooseFormat(formats));
+    }
+
+    [Fact]
     public void ChooseFormat_SmallerExists_NeverPicksAbove1080p()
     {
         VideoFormat[] formats = [new(2560, 1440, 30), new(640, 360, 30)];

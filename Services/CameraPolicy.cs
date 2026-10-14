@@ -8,7 +8,9 @@ public static class CameraPolicy
 {
     // QR detection doesn't need more than 720p, and smaller frames decode faster.
     private const int TargetWidth = 1280;
+    private const int TargetHeight = 720;
     private const int MaxWidth = 1920;
+    private const int MaxHeight = 1080;
     private const double MinFramesPerSecond = 15;
 
     /// <summary>
@@ -23,9 +25,9 @@ public static class CameraPolicy
         }
 
         return Enumerable.Range(0, formats.Count)
-            .OrderBy(i => formats[i].Width > MaxWidth)
+            .OrderBy(i => formats[i].Width > MaxWidth || formats[i].Height > MaxHeight)
             .ThenBy(i => formats[i].FramesPerSecond < MinFramesPerSecond)
-            .ThenBy(i => Math.Abs(formats[i].Width - TargetWidth))
+            .ThenBy(i => Math.Abs(formats[i].Width - TargetWidth) + Math.Abs(formats[i].Height - TargetHeight))
             .ThenByDescending(i => formats[i].FramesPerSecond)
             .First();
     }
