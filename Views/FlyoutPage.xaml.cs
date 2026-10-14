@@ -562,6 +562,11 @@ public sealed partial class FlyoutPage : Page, IDisposable
             CameraScanner started = scanner;
             scanner.CodesFound += (codes, snapshot) => DispatcherQueue.TryEnqueue(() => _ = ShowCameraCodesAsync(started, codes, snapshot));
             scanner.Failed += problem => DispatcherQueue.TryEnqueue(() => _ = StopCameraWithProblemAsync(started, problem));
+
+            // Own the scanner before it delivers frames: its first hit or failure can reach the UI
+            // thread before StartAsync's continuation does, and must not be rejected as stale.
+            _scanner = scanner;
+
             // On first use, starting the camera shows Windows' consent prompt, which takes focus.
             // The window keeps the flyout open behind it, and takes focus back once it's answered.
             IsAwaitingCameraConsent = NeedsCameraConsent();
@@ -578,9 +583,10 @@ public sealed partial class FlyoutPage : Page, IDisposable
                 }
             }
 
+            // Started and still wanted: keep it. Otherwise (hidden, tab switched, or a code was
+            // already found) the finally below releases it.
             if (generation == _cameraGeneration)
             {
-                _scanner = scanner;
                 scanner = null;
             }
         }
@@ -597,9 +603,14 @@ public sealed partial class FlyoutPage : Page, IDisposable
         {
             try
             {
-                // A start that was overtaken (or failed halfway) leaves nothing running.
+                // A start that was overtaken (or failed halfway) gives up ownership and leaves nothing running.
                 if (scanner is not null)
                 {
+                    if (_scanner == scanner)
+                    {
+                        _scanner = null;
+                    }
+
                     await scanner.DisposeAsync();
                 }
             }
