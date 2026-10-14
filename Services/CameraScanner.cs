@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices.WindowsRuntime;
 using Microsoft.UI.Xaml.Controls;
 using Windows.Devices.Enumeration;
@@ -32,7 +33,7 @@ internal sealed class CameraScanner : IAsyncDisposable
     public event Action<IReadOnlyList<string>, SoftwareBitmap>? CodesFound;
 
     /// <summary>Raised off the UI thread when the camera stops working, e.g. it was unplugged.</summary>
-    public event Action<string>? Failed;
+    public event Action<CameraProblem>? Failed;
 
     public static async Task<IReadOnlyList<DeviceInformation>> FindCamerasAsync() =>
         await DeviceInformation.FindAllAsync(DeviceClass.VideoCapture);
@@ -55,7 +56,7 @@ internal sealed class CameraScanner : IAsyncDisposable
         _capture.Failed += Capture_Failed;
 
         MediaFrameSource source = FindColorSource(_capture)
-            ?? throw new InvalidOperationException("This camera doesn't offer a color video stream.");
+            ?? throw new CameraException(CameraProblem.Unsupported, "No color VideoPreview or VideoRecord frame source.");
         if (isExclusive)
         {
             await TrySetFormatAsync(source);
@@ -73,7 +74,7 @@ internal sealed class CameraScanner : IAsyncDisposable
         MediaFrameReaderStartStatus status = await _reader.StartAsync();
         if (status != MediaFrameReaderStartStatus.Success)
         {
-            throw new InvalidOperationException($"The camera didn't start ({status}).");
+            throw new CameraException(ProblemFor(status), $"MediaFrameReader.StartAsync returned {status}.");
         }
     }
 
@@ -165,7 +166,20 @@ internal sealed class CameraScanner : IAsyncDisposable
         }
     }
 
-    private void Capture_Failed(MediaCapture sender, MediaCaptureFailedEventArgs args) => Failed?.Invoke(args.Message);
+    private static CameraProblem ProblemFor(MediaFrameReaderStartStatus status) => status switch
+    {
+        MediaFrameReaderStartStatus.DeviceNotAvailable => CameraProblem.Disconnected,
+        MediaFrameReaderStartStatus.ExclusiveControlNotAvailable => CameraProblem.InUse,
+        MediaFrameReaderStartStatus.OutputFormatNotSupported => CameraProblem.Unsupported,
+        _ => CameraProblem.Unknown,
+    };
+
+    // The platform's message is diagnostic detail; the UI gets only the classified problem.
+    private void Capture_Failed(MediaCapture sender, MediaCaptureFailedEventArgs args)
+    {
+        Trace.WriteLine($"TrayQr camera failed: 0x{args.Code:X8} {args.Message}");
+        Failed?.Invoke(CameraProblems.FromHResult(unchecked((int)args.Code)));
+    }
 
     private void Reader_FrameArrived(MediaFrameReader sender, MediaFrameArrivedEventArgs args)
     {

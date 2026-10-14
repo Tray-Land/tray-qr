@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.UI;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
@@ -560,7 +561,7 @@ public sealed partial class FlyoutPage : Page, IDisposable
             scanner = new CameraScanner();
             CameraScanner started = scanner;
             scanner.CodesFound += (codes, snapshot) => DispatcherQueue.TryEnqueue(() => _ = ShowCameraCodesAsync(started, codes, snapshot));
-            scanner.Failed += message => DispatcherQueue.TryEnqueue(() => _ = StopCameraWithMessageAsync(started, $"The camera stopped: {message}"));
+            scanner.Failed += problem => DispatcherQueue.TryEnqueue(() => _ = StopCameraWithProblemAsync(started, problem));
             // On first use, starting the camera shows Windows' consent prompt, which takes focus.
             // The window keeps the flyout open behind it, and takes focus back once it's answered.
             IsAwaitingCameraConsent = NeedsCameraConsent();
@@ -583,18 +584,13 @@ public sealed partial class FlyoutPage : Page, IDisposable
                 scanner = null;
             }
         }
-        catch (UnauthorizedAccessException)
-        {
-            if (generation == _cameraGeneration)
-            {
-                ShowCameraStatus("Camera access is off for Tray QR.", showPrivacyLink: true);
-            }
-        }
         catch (Exception ex)
         {
+            // The exception's text is diagnostic detail; the user gets a stable message they can act on.
+            Trace.WriteLine($"TrayQr camera didn't start: 0x{ex.HResult:X8} {ex}");
             if (generation == _cameraGeneration)
             {
-                ShowCameraStatus($"Couldn't start the camera: {ex.Message}");
+                ShowCameraProblem(CameraProblems.FromException(ex));
             }
         }
         finally
@@ -660,7 +656,7 @@ public sealed partial class FlyoutPage : Page, IDisposable
         }
     }
 
-    private async Task StopCameraWithMessageAsync(CameraScanner scanner, string message)
+    private async Task StopCameraWithProblemAsync(CameraScanner scanner, CameraProblem problem)
     {
         if (scanner != _scanner)
         {
@@ -668,7 +664,7 @@ public sealed partial class FlyoutPage : Page, IDisposable
         }
 
         await StopCameraAsync();
-        ShowCameraStatus(message);
+        ShowCameraProblem(problem);
     }
 
     // Freezes on the frame with the code and turns the camera off until Scan again.
@@ -690,6 +686,7 @@ public sealed partial class FlyoutPage : Page, IDisposable
 
         CameraResultsList.ItemsSource = codes.Select(ScanResult.From).ToList();
         CameraHintText.Visibility = Visibility.Collapsed;
+        ScanAgainText.Text = "Scan again";
         ScanAgainButton.Visibility = Visibility.Visible;
     }
 
@@ -707,11 +704,17 @@ public sealed partial class FlyoutPage : Page, IDisposable
         CameraButton.Visibility = cameras.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
     }
 
+    private void ShowCameraProblem(CameraProblem problem) =>
+        ShowCameraStatus(CameraProblems.MessageFor(problem), showPrivacyLink: problem == CameraProblem.AccessDenied);
+
+    // Every camera message ends in "try again", so it comes with a button that does.
     private void ShowCameraStatus(string? message, bool showPrivacyLink = false)
     {
         CameraStatusText.Text = message ?? string.Empty;
         CameraStatusPanel.Visibility = message is null ? Visibility.Collapsed : Visibility.Visible;
         PrivacySettingsLink.Visibility = showPrivacyLink ? Visibility.Visible : Visibility.Collapsed;
+        ScanAgainText.Text = "Try again";
+        ScanAgainButton.Visibility = message is null ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void ResumeScanning()

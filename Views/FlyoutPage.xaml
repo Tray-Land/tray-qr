@@ -466,7 +466,7 @@
                     Visibility="Collapsed">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <FontIcon FontSize="14" Glyph="&#xE72C;" />
-                        <TextBlock Text="Scan again" />
+                        <TextBlock x:Name="ScanAgainText" Text="Scan again" />
                     </StackPanel>
                 </Button>
             </Grid>
