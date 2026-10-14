@@ -636,7 +636,8 @@ public sealed partial class FlyoutPage : Page, IDisposable
 
         try
         {
-            return AppCapability.Create("Webcam").CheckAccess() == AppCapabilityAccessStatus.UserPromptRequired;
+            // The name matches the <DeviceCapability Name="webcam" /> declaration in Package.appxmanifest.
+            return AppCapability.Create("webcam").CheckAccess() == AppCapabilityAccessStatus.UserPromptRequired;
         }
         catch (Exception)
         {
