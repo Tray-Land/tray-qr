@@ -31,6 +31,13 @@ internal static class SettingsService
         set => Set(nameof(LastText), value.Length > 2000 ? value[..2000] : value);
     }
 
+    /// <summary>The camera last chosen in the Camera tab, by device id.</summary>
+    public static string? CameraId
+    {
+        get => Get<string?>(nameof(CameraId), null);
+        set => Set(nameof(CameraId), value);
+    }
+
     public static QrErrorCorrection ErrorCorrection
     {
         get => (QrErrorCorrection)Get(nameof(ErrorCorrection), (int)QrErrorCorrection.Medium);
