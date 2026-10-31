@@ -25,6 +25,10 @@ Tray QR sits in the notification area. Click the icon to open a small flyout, ty
 - Optionally start with Windows.
 - Uses no network. Nothing runs while the flyout is hidden.
 
+## Install
+
+Download [TrayQr.appinstaller](https://github.com/TheJoeFin/tray-qr/releases/latest/download/TrayQr.appinstaller) and open it. Windows installs the right version for your PC and keeps it updated.
+
 ## Requirements
 
 - Windows 10 1809 (build 17763) or later, x64 or ARM64
@@ -48,6 +52,10 @@ dotnet run   -c Debug -p:Platform=$Platform
 cd TrayQr.Tests
 dotnet test -c Debug -p:Platform=$Platform
 ```
+
+### Releasing
+
+Bump `Identity/@Version` in `Package.appxmanifest`, commit and push, then run `.\build-msix-for-gh.ps1`. It builds a signed x64 + ARM64 `.msixbundle` and the `.appinstaller` feed, and creates a draft GitHub release. Publish the draft without changing its tag, then run `.\build-msix-for-gh.ps1 -VerifyPublished` to check the live feed. Use `-SkipRelease -NoSign` to prove the build without signing or publishing.
 
 ## Built with
 
