@@ -27,6 +27,8 @@ Tray QR sits in the notification area. Click the icon to open a small flyout, ty
 
 ## Install
 
+[<img src="docs/MSIX.svg" alt="Install TrayQr (MSIX)" width="212">](https://github.com/TheJoeFin/tray-qr/releases/latest/download/TrayQr.appinstaller)
+
 Download [TrayQr.appinstaller](https://github.com/TheJoeFin/tray-qr/releases/latest/download/TrayQr.appinstaller) and open it. Windows installs the right version for your PC and keeps it updated.
 
 ## Requirements
